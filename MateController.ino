@@ -1,21 +1,44 @@
 /*
  * MateDisplayController
  * 
+ * nutcase 2019-06-06
+ * 
  */
 #include <ESP8266WiFi.h>
 #include <ESP8266mDNS.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
+#include <Adafruit_NeoPixel.h>
 
 #include "Config.h"
 
 #ifndef STASSID
-#define STASSID "your-ssid"
-#define STAPSK  "your-password"
+  #define STASSID "your-ssid"
+  #define STAPSK  "your-password"
+#endif
+
+#ifndef PIN
+  #define PIN            D4
+#endif
+#ifndef NUMPIXELS
+  #define NUMPIXELS      20
 #endif
 
 const char* ssid = STASSID;
 const char* password = STAPSK;
+
+Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+
+WiFiUDP udp;
+unsigned int tpm2NetPort = 65506; // TPM2.NET port
+
+
+/* 
+ *  TPM2.NET stuff
+ */
+const int PACKET_SIZE = 1357;
+byte packetBuffer[PACKET_SIZE]; //buffer to hold incoming and outgoing packets
+int led_index = 0;
 
 void setup_wifi() {
   Serial.println();
@@ -81,14 +104,83 @@ void setup_ota() {
   ArduinoOTA.begin();
 }
 
+void setup_pixels() {
+  pixels.clear();
+  // TODO: add some init/dummy sequence?
+  pixels.begin();  
+}
+
+void setup_udp() {
+  Serial.println("Open UDP port");
+  udp.begin(tpm2NetPort);
+  Serial.print("Opened TPM2.NET port: ");
+  Serial.println(udp.localPort());
+}
+
 void setup() {
   Serial.begin(115200);
   Serial.println("Booting");
   setup_wifi();
   setup_ota();
+  setup_pixels();
+  setup_udp();
   Serial.println("Ready");
+}
+
+/*
+ * Main Loop Stuff
+ */
+
+void tpm2NetHandle() {
+ /* TPM2.NET Stuff
+ *  taken from https://hackaday.io/project/25851-pixel-led-wifi-controller-tpm2net
+ */
+  int cb = udp.parsePacket();
+  if (!cb) {
+    // nothing
+  } else {
+    // We've received a packet, read the data from it
+    udp.read(packetBuffer, PACKET_SIZE); // read the packet into the buffer
+    if (cb >= 6 && packetBuffer[0] == 0x9C)  { // header identifier (packet start)
+      byte blocktype = packetBuffer[1]; // block type (0xDA)
+      unsigned int framelength = ((unsigned int)packetBuffer[2] << 8) | (unsigned int)packetBuffer[3]; // frame length (0x0069) = 105 leds
+      byte packagenum = packetBuffer[4];   // packet number 0-255 0x00 = no frame split (0x01)
+      byte numpackages = packetBuffer[5];   // total packets 1-255 (0x01)
+                   
+      if (blocktype == 0xDA) {
+        // data frame ...
+        // Serial.println("command");
+        
+        int packetindex;
+        
+        if (cb >= framelength + 7 && packetBuffer[6 + framelength] == 0x36) { 
+          // header end (packet stop)
+          // Serial.println("s:");
+          int i = 0;
+          packetindex = 6;
+          if(packagenum == 1) {
+            led_index =0;
+          }
+          while(packetindex < (framelength + 6)) {
+            int r =((int)packetBuffer[packetindex]);
+            int g =((int)packetBuffer[packetindex+1]);
+            int b =((int)packetBuffer[packetindex+2]);
+            pixels.setPixelColor(led_index, pixels.Color(r,g,b));
+            led_index++;         
+            packetindex +=3;
+          }
+        }
+      }
+    
+      if((packagenum == numpackages) && (led_index== NUMPIXELS)) {
+        pixels.show();
+        led_index==0;
+      }  
+    }
+  } 
 }
 
 void loop() {
   ArduinoOTA.handle();
+  tpm2NetHandle();
 }
