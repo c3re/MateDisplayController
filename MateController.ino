@@ -10,12 +10,12 @@
 #include <ArduinoOTA.h>
 #include <Adafruit_NeoPixel.h>
 
-#include "Config.h"
+// WiFiManager stuff
+#include <DNSServer.h>            //Local DNS Server used for redirecting all requests to the configuration portal
+#include <ESP8266WebServer.h>     //Local WebServer used to serve the configuration portal
+#include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 
-#ifndef STASSID
-  #define STASSID "your-ssid"
-  #define STAPSK  "your-password"
-#endif
+#include "Config.h"
 
 #ifndef PIN
   #define PIN            D4
@@ -23,9 +23,6 @@
 #ifndef NUMPIXELS
   #define NUMPIXELS      20
 #endif
-
-const char* ssid = STASSID;
-const char* password = STAPSK;
 
 Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
 
@@ -39,22 +36,6 @@ unsigned int tpm2NetPort = 65506; // TPM2.NET port
 const int PACKET_SIZE = 1357;
 byte packetBuffer[PACKET_SIZE]; //buffer to hold incoming and outgoing packets
 int led_index = 0;
-
-void setup_wifi() {
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
-}
 
 void setup_ota() {
   // Port defaults to 8266
@@ -114,7 +95,15 @@ void setup_udp() {
   Serial.println("Open UDP port");
   udp.begin(tpm2NetPort);
   Serial.print("Opened TPM2.NET port: ");
+  Serial.print(WiFi.localIP());
+  Serial.print(":");
   Serial.println(udp.localPort());
+}
+
+void setup_wifi() {
+  WiFiManager wifiManager;
+  wifiManager.autoConnect("WiFiManager");
+  Serial.print(WiFi.localIP());
 }
 
 void setup() {
