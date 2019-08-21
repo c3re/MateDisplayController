@@ -1,2 +1,2 @@
-#define PIN            D4  // data pin
-#define NUMPIXELS      40  // number of LEDs 
+#define PIN            D2  // data pin
+#define NUMPIXELS      420 // number of LEDs 
